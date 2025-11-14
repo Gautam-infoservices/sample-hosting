@@ -1,0 +1,59 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Deploy to Vercel (produce URL)
+        id: vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # Deploy and capture the CLI output
+          set -o pipefail
+          DEPLOY_OUTPUT=$(vercel --prod --token "$VERCEL_TOKEN" --confirm 2>&1)
+          echo "Vercel output:\n$DEPLOY_OUTPUT"
+
+          # Try to extract the first https URL (this works for standard vercel CLI output)
+          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https?://[^ ]+' | head -n1 || true)
+
+          # Fallback: if nothing found, set empty string
+          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+
+          # Also append to the Actions summary so it's visible in the run UI
+          if [ -n "$DEPLOY_URL" ]; then
+            echo "### Vercel deployment" >> $GITHUB_STEP_SUMMARY
+            echo "Deployed to: $DEPLOY_URL" >> $GITHUB_STEP_SUMMARY
+            echo "$DEPLOY_URL" > deployment-url.txt
+          else
+            echo "### Vercel deployment" >> $GITHUB_STEP_SUMMARY
+            echo "Deployment completed but URL could not be parsed from CLI output. Check the logs above or your Vercel dashboard." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload deployment URL artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-url
+          path: deployment-url.txt
+
+      - name: Summary (console)
+        run: |
+          echo "Deployment URL: ${{ steps.vercel.outputs.url }}"
